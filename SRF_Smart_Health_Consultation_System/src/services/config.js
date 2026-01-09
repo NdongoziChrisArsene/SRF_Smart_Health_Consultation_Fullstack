@@ -1,0 +1,84 @@
+// src/services/config.js
+
+// Base URL for your backend API (Vite-compatible)
+export const BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// // src/services/config.js
+
+// // Base URL for your backend API
+// export const BASE_URL = process.env.REACT_APP_API_BASE_URL || "http://localhost:8000";

@@ -1,34 +1,154 @@
 import { useState } from "react";
+import { useNavigate, Link } from "react-router-dom";
+import { useDispatch } from "react-redux";
+import toast from "react-hot-toast";
+import API from "../../services/api";
+import { setCredentials } from "../../redux/authSlice";
 
 export default function Register() {
+  const navigate = useNavigate();
+  const dispatch = useDispatch();
+
   const [form, setForm] = useState({
-    name: "",
+    username: "",
     email: "",
     password: "",
+    password_confirm: "",
     role: "patient",
     specialization: "",
   });
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [errors, setErrors] = useState({});
 
   const handleChange = (e) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+    setForm({ ...form, [name]: value });
+    // Clear error for this field when user starts typing
+    if (errors[name]) {
+      setErrors({ ...errors, [name]: "" });
+    }
+  };
+
+  const validateForm = () => {
+    const newErrors = {};
+
+    if (!form.username.trim()) {
+      newErrors.username = "Username is required";
+    } else if (form.username.length < 3) {
+      newErrors.username = "Username must be at least 3 characters";
+    }
+
+    if (!form.email.trim()) {
+      newErrors.email = "Email is required";
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
+      newErrors.email = "Please enter a valid email";
+    }
+
+    if (!form.password) {
+      newErrors.password = "Password is required";
+    } else if (form.password.length < 8) {
+      newErrors.password = "Password must be at least 8 characters";
+    }
+
+    if (!form.password_confirm) {
+      newErrors.password_confirm = "Please confirm your password";
+    } else if (form.password !== form.password_confirm) {
+      newErrors.password_confirm = "Passwords do not match";
+    }
+
+    if (form.role === "doctor" && !form.specialization.trim()) {
+      newErrors.specialization = "Specialization is required for doctors";
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError("");
+    setErrors({});
+
+    if (!validateForm()) {
+      return;
+    }
+
     setLoading(true);
 
-    // Simulating API call
-    setTimeout(() => {
-      alert("Registration successful. Please login.");
+    try {
+      // Prepare data for API
+      const payload = {
+        username: form.username.trim(),
+        email: form.email.trim().toLowerCase(),
+        password: form.password,
+        password_confirm: form.password_confirm,
+        role: form.role,
+      };
+
+      // Add specialization only for doctors
+      if (form.role === "doctor" && form.specialization.trim()) {
+        payload.specialization = form.specialization.trim();
+      }
+
+      console.log("Sending registration data:", { ...payload, password: "***", password_confirm: "***" });
+
+      const res = await API.post("api/auth/register/", payload);
+
+      // Store credentials in Redux
+      dispatch(setCredentials({
+        access: res.data.access,
+        refresh: res.data.refresh,
+        role: res.data.role
+      }));
+
+      toast.success("Registration successful!");
+
+      // Redirect based on user role
+      setTimeout(() => {
+        if (res.data.role === "doctor") {
+          navigate("/doctor");
+        } else if (res.data.role === "admin") {
+          navigate("/admin");
+        } else {
+          navigate("/patient");
+        }
+      }, 500);
+
+    } catch (err) {
+      console.error("Registration error:", err.response?.data);
+
+      if (err.response?.data) {
+        const apiErrors = err.response.data;
+
+        // Handle field-specific errors from backend
+        if (typeof apiErrors === "object") {
+          const newErrors = {};
+          
+          Object.keys(apiErrors).forEach(key => {
+            if (Array.isArray(apiErrors[key])) {
+              newErrors[key] = apiErrors[key][0];
+            } else {
+              newErrors[key] = apiErrors[key];
+            }
+          });
+
+          setErrors(newErrors);
+
+          // Show first error in toast
+          const firstError = Object.values(newErrors)[0];
+          toast.error(firstError || "Registration failed");
+        } else {
+          toast.error(apiErrors.detail || apiErrors.error || "Registration failed");
+        }
+      } else {
+        toast.error("Registration failed. Please check your connection and try again.");
+      }
+    } finally {
       setLoading(false);
-    }, 1500);
+    }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-white to-purple-50 px-4 py-8">
+    <div className="min-h-screen flex items-center justify-center bg-white px-4 py-8">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-gray-800 mb-2">
@@ -39,48 +159,38 @@ export default function Register() {
           </p>
         </div>
 
-        <div className="bg-white p-8 rounded-xl shadow-lg border border-gray-100">
+        <div className="bg-brand-yellow p-8 rounded-xl shadow-lg border border-gray-100">
           <h2 className="text-2xl font-bold mb-6 text-gray-800">
             Register
           </h2>
 
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4 flex items-start">
-              <svg
-                className="w-4 h-4 sm:w-5 sm:h-5 mr-2 mt-0.5 flex-shrink-0"
-                fill="currentColor"
-                viewBox="0 0 20 20"
-                aria-hidden="true"
-              >
-                <path
-                  fillRule="evenodd"
-                  d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-                  clipRule="evenodd"
-                />
-              </svg>
-              <span>{error}</span>
-            </div>
-          )}
-
-          <div className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Username Field */}
             <div>
               <label
-                htmlFor="name"
+                htmlFor="username"
                 className="block text-sm font-medium text-gray-700 mb-1"
               >
-                Full Name
+                Username
               </label>
               <input
-                id="name"
-                name="name"
-                placeholder="John Doe"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all outline-none"
-                value={form.name}
+                id="username"
+                name="username"
+                type="text"
+                placeholder="johndoe"
+                className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-brand-red focus:border-transparent transition-all outline-none ${
+                  errors.username ? "border-red-500" : "border-gray-300"
+                }`}
+                value={form.username}
                 onChange={handleChange}
                 required
               />
+              {errors.username && (
+                <p className="mt-1 text-sm text-red-600">{errors.username}</p>
+              )}
             </div>
 
+            {/* Email Field */}
             <div>
               <label
                 htmlFor="email"
@@ -93,13 +203,19 @@ export default function Register() {
                 name="email"
                 type="email"
                 placeholder="john@example.com"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all outline-none"
+                className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-brand-red focus:border-transparent transition-all outline-none ${
+                  errors.email ? "border-red-500" : "border-gray-300"
+                }`}
                 value={form.email}
                 onChange={handleChange}
                 required
               />
+              {errors.email && (
+                <p className="mt-1 text-sm text-red-600">{errors.email}</p>
+              )}
             </div>
 
+            {/* Password Field */}
             <div>
               <label
                 htmlFor="password"
@@ -112,13 +228,47 @@ export default function Register() {
                 name="password"
                 type="password"
                 placeholder="••••••••"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all outline-none"
+                className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-brand-red focus:border-transparent transition-all outline-none ${
+                  errors.password ? "border-red-500" : "border-gray-300"
+                }`}
                 value={form.password}
                 onChange={handleChange}
                 required
               />
+              {errors.password && (
+                <p className="mt-1 text-sm text-red-600">{errors.password}</p>
+              )}
+              <p className="mt-1 text-xs text-gray-500">
+                Must be at least 8 characters
+              </p>
             </div>
 
+            {/* Confirm Password Field */}
+            <div>
+              <label
+                htmlFor="password_confirm"
+                className="block text-sm font-medium text-gray-700 mb-1"
+              >
+                Confirm Password
+              </label>
+              <input
+                id="password_confirm"
+                name="password_confirm"
+                type="password"
+                placeholder="••••••••"
+                className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-brand-red focus:border-transparent transition-all outline-none ${
+                  errors.password_confirm ? "border-red-500" : "border-gray-300"
+                }`}
+                value={form.password_confirm}
+                onChange={handleChange}
+                required
+              />
+              {errors.password_confirm && (
+                <p className="mt-1 text-sm text-red-600">{errors.password_confirm}</p>
+              )}
+            </div>
+
+            {/* Role Selection */}
             <div>
               <label
                 htmlFor="role"
@@ -129,7 +279,7 @@ export default function Register() {
               <select
                 id="role"
                 name="role"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all outline-none bg-white"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-red focus:border-transparent transition-all outline-none bg-white"
                 value={form.role}
                 onChange={handleChange}
               >
@@ -138,6 +288,7 @@ export default function Register() {
               </select>
             </div>
 
+            {/* Specialization (for doctors only) */}
             {form.role === "doctor" && (
               <div className="animate-fadeIn">
                 <label
@@ -149,57 +300,50 @@ export default function Register() {
                 <input
                   id="specialization"
                   name="specialization"
+                  type="text"
                   placeholder="e.g., Cardiology, Pediatrics"
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all outline-none"
+                  className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-brand-red focus:border-transparent transition-all outline-none ${
+                    errors.specialization ? "border-red-500" : "border-gray-300"
+                  }`}
                   value={form.specialization}
                   onChange={handleChange}
                   required
                 />
+                {errors.specialization && (
+                  <p className="mt-1 text-sm text-red-600">{errors.specialization}</p>
+                )}
               </div>
             )}
-          </div>
 
-          <button
-            disabled={loading}
-            onClick={handleSubmit}
-            className="w-full mt-6 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-semibold py-3 px-4 rounded-lg transition-colors duration-200 shadow-md hover:shadow-lg"
-          >
-            {loading ? (
-              <span className="flex items-center justify-center">
-                <svg
-                  className="animate-spin mr-2 h-4 w-4 sm:h-5 sm:w-5 text-white flex-shrink-0"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  aria-hidden="true"
-                >
-                  <circle
-                    className="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                  />
-                  <path
-                    className="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                  />
-                </svg>
-                Creating Account...
-              </span>
-            ) : (
-              "Create Account"
-            )}
-          </button>
+            {/* Submit Button */}
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full mt-6 btn-primary disabled:bg-gray-400 disabled:cursor-not-allowed font-semibold py-3 rounded-lg shadow-md hover:shadow-lg transition-all"
+            >
+              {loading ? (
+                <span className="flex items-center justify-center">
+                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Creating Account...
+                </span>
+              ) : (
+                "Create Account"
+              )}
+            </button>
+          </form>
 
           <div className="mt-6 text-center">
             <p className="text-sm text-gray-600">
               Already have an account?{" "}
-              <span className="text-blue-600 hover:text-blue-700 font-medium hover:underline transition-colors cursor-pointer">
+              <Link 
+                to="/login" 
+                className="text-brand-red hover:text-brand-red-dark font-medium hover:underline transition-colors"
+              >
                 Sign In
-              </span>
+              </Link>
             </p>
           </div>
         </div>
@@ -211,9 +355,3 @@ export default function Register() {
     </div>
   );
 }
-
-
-
-
-
-

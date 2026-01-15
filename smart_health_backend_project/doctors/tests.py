@@ -2,11 +2,15 @@ from rest_framework.test import APITestCase
 from rest_framework import status
 from django.urls import reverse
 from django.contrib.auth import get_user_model
-from datetime import time
+from datetime import time, timedelta
+from django.utils import timezone
 from doctors.models import DoctorProfile, Availability, Diagnosis, Prescription
 from appointments.models import Appointment
 
 User = get_user_model()
+
+
+from patients.models import PatientProfile
 
 
 class DoctorProfileTests(APITestCase):
@@ -15,6 +19,8 @@ class DoctorProfileTests(APITestCase):
         self.user = User.objects.create_user(
             username="doctor1", password="password123", role="doctor"
         )
+        # Ensure a DoctorProfile exists
+        DoctorProfile.objects.get_or_create(user=self.user)
         self.client.force_authenticate(self.user)
 
     def test_get_doctor_profile(self):
@@ -34,6 +40,7 @@ class AvailabilityTests(APITestCase):
         self.user = User.objects.create_user(
             username="doctor2", password="password123", role="doctor"
         )
+        DoctorProfile.objects.get_or_create(user=self.user)
         self.client.force_authenticate(self.user)
 
     def test_create_availability(self):
@@ -59,13 +66,18 @@ class DiagnosisTests(APITestCase):
         # Create doctor and patient
         self.doctor = User.objects.create_user(username="doctor3", password="pass123", role="doctor")
         self.patient = User.objects.create_user(username="patient2", password="pass123", role="patient")
+        # Ensure profiles exist
+        self.doctor_profile, _ = DoctorProfile.objects.get_or_create(user=self.doctor)
+        self.patient_profile, _ = PatientProfile.objects.get_or_create(user=self.patient)
         self.client.force_authenticate(self.doctor)
 
-        # Create appointment
+        # Create appointment in the near future
+        future_date = (timezone.now() + timedelta(days=1)).date().isoformat()
         self.appointment = Appointment.objects.create(
-            doctor=self.doctor,
-            patient=self.patient,
-            date="2026-01-01T10:00:00"
+            doctor=self.doctor_profile,
+            patient=self.patient_profile,
+            date=future_date,
+            time="10:00:00"
         )
 
     def test_doctor_can_create_diagnosis(self):
@@ -112,12 +124,17 @@ class PrescriptionPDFTests(APITestCase):
     def setUp(self):
         self.doctor = User.objects.create_user(username="doctor5", password="pass123", role="doctor")
         self.patient = User.objects.create_user(username="patient3", password="pass123", role="patient")
+        # Ensure profiles exist
+        self.doctor_profile, _ = DoctorProfile.objects.get_or_create(user=self.doctor)
+        self.patient_profile, _ = PatientProfile.objects.get_or_create(user=self.patient)
         self.client.force_authenticate(self.doctor)
 
+        future_date = (timezone.now() + timedelta(days=1)).date().isoformat()
         self.appointment = Appointment.objects.create(
-            doctor=self.doctor,
-            patient=self.patient,
-            date="2026-01-02T11:00:00"
+            doctor=self.doctor_profile,
+            patient=self.patient_profile,
+            date=future_date,
+            time="11:00:00"
         )
 
         self.diagnosis = Diagnosis.objects.create(
@@ -155,71 +172,3 @@ class PrescriptionPDFTests(APITestCase):
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# from rest_framework.test import APITestCase
-# from django.urls import reverse
-# from django.contrib.auth import get_user_model
-# from rest_framework import status
-# from doctors.models import DoctorProfile, Availability
-
-# User = get_user_model()
-
-
-# class DoctorProfileTests(APITestCase):
-#     def setUp(self):
-#         self.user = User.objects.create_user(
-#             username="doctor1",
-#             password="password123",
-#             role="doctor"
-#         )
-#         self.client.force_authenticate(self.user)
-
-#     def test_get_doctor_profile(self):
-#         response = self.client.get(reverse("doctor-profile"))
-#         self.assertEqual(response.status_code, status.HTTP_200_OK)
-#         self.assertEqual(response.data["username"], "doctor1")
-
-
-# class AvailabilityTests(APITestCase):
-#     def setUp(self):
-#         self.user = User.objects.create_user(
-#             username="doctor2",
-#             password="password123",
-#             role="doctor"
-#         )
-#         self.client.force_authenticate(self.user)
-
-#     def test_create_availability(self):
-#         payload = {
-#             "day_of_week": "Monday",
-#             "start_time": "09:00",
-#             "end_time": "12:00",
-#         }
-#         response = self.client.post(
-#             reverse("doctor-availability"), payload
-#         )
-#         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-#         self.assertEqual(Availability.objects.count(), 1)

@@ -1,18 +1,18 @@
-# from django.db.models.signals import post_save
-# from django.dispatch import receiver
-# from django.contrib.auth import get_user_model
-# from .models import PatientProfile
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+from django.contrib.auth import get_user_model
+from .models import PatientProfile
 
-# User = get_user_model()
+User = get_user_model()
 
 
-# @receiver(post_save, sender=User)
-# def create_patient_profile(sender, instance, created, **kwargs):
-#     """
-#     Automatically create a PatientProfile for users with role='patient'.
-#     """
-#     if created and getattr(instance, "role", None) == "patient":
-#         PatientProfile.objects.get_or_create(user=instance)
+@receiver(post_save, sender=User)
+def create_patient_profile(sender, instance, created, **kwargs):
+    """
+    Automatically create a PatientProfile for users with role='patient'.
+    """
+    if created and getattr(instance, "role", None) == "patient":
+        PatientProfile.objects.get_or_create(user=instance)
 
 
 

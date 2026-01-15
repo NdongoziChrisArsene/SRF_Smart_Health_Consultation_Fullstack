@@ -1,23 +1,48 @@
 from rest_framework import generics, permissions
 from rest_framework.exceptions import NotFound, PermissionDenied
+from django.core.exceptions import ValidationError
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
-from reportlab.pdfgen import canvas
+from reportlab.pdfgen import canvas 
+from rest_framework.permissions import IsAuthenticated 
+from rest_framework.response import Response
 
 from .models import DoctorProfile, Availability, Diagnosis
-from .serializers import DoctorSerializer, AvailabilitySerializer, DiagnosisSerializer
+from .serializers import AvailabilitySerializer, DiagnosisSerializer, DoctorProfileSerializer
 from users.permissions import IsDoctor, IsPatient
 
-class DoctorProfileView(generics.RetrieveUpdateAPIView):
-    serializer_class = DoctorSerializer
-    permission_classes = [permissions.IsAuthenticated, IsDoctor]
 
-    def get_object(self):
-        doctor = getattr(self.request.user, "doctor_profile", None)
-        if not doctor:
-            raise NotFound("Doctor profile not found")
-        return doctor
+class DoctorListView(generics.ListAPIView):
+    """
+    List all verified doctors
+    """
+    queryset = DoctorProfile.objects.filter(
+        is_verified=True
+    ).select_related('user').prefetch_related('availability').order_by('-years_of_experience')
+    serializer_class = DoctorProfileSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+
+class DoctorRecommendationsView(generics.ListAPIView):
+    """
+    Get recommended doctors (top 10 by experience)
+    """
+    queryset = DoctorProfile.objects.filter(
+        is_verified=True
+    ).select_related('user').prefetch_related('availability').order_by('-years_of_experience')[:10]
+    serializer_class = DoctorProfileSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+
+class DoctorDetailView(generics.RetrieveAPIView):
+    """
+    Get single doctor details
+    """
+    queryset = DoctorProfile.objects.filter(is_verified=True).select_related('user').prefetch_related('availability')
+    serializer_class = DoctorProfileSerializer
+    permission_classes = [permissions.IsAuthenticated]
     
+
 class AvailabilityListCreateView(generics.ListCreateAPIView):
     serializer_class = AvailabilitySerializer
     permission_classes = [permissions.IsAuthenticated, IsDoctor]
@@ -27,8 +52,13 @@ class AvailabilityListCreateView(generics.ListCreateAPIView):
 
     def perform_create(self, serializer):
         instance = serializer.save(doctor=self.request.user.doctor_profile)
-        instance.full_clean()
+        try:
+            instance.full_clean()
+        except ValidationError as e:
+            from rest_framework.exceptions import ValidationError as DRFValidationError
+            raise DRFValidationError(detail=e.message_dict or e.messages)
         instance.save()
+
 
 class AvailabilityDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = AvailabilitySerializer
@@ -37,6 +67,7 @@ class AvailabilityDetailView(generics.RetrieveUpdateDestroyAPIView):
     def get_queryset(self):
         return Availability.objects.filter(doctor=self.request.user.doctor_profile)
 
+
 class CreateDiagnosisAPIView(generics.CreateAPIView):
     serializer_class = DiagnosisSerializer
     permission_classes = [permissions.IsAuthenticated, IsDoctor]
@@ -44,28 +75,49 @@ class CreateDiagnosisAPIView(generics.CreateAPIView):
     def perform_create(self, serializer):
         appointment = serializer.validated_data["appointment"]
 
-        if appointment.doctor != self.request.user:
+        # Get the doctor user from appointment
+        doctor_user = getattr(appointment.doctor, "user", appointment.doctor)
+        if doctor_user != self.request.user:
             raise PermissionDenied("You are not assigned to this appointment.")
 
         serializer.save()
 
+
 class DoctorDiagnosisHistoryView(generics.ListAPIView):
+    """
+    View for doctors to see all diagnoses they've created
+    """
     serializer_class = DiagnosisSerializer
     permission_classes = [permissions.IsAuthenticated, IsDoctor]
 
     def get_queryset(self):
+        # Get doctor profile
+        doctor_profile = getattr(self.request.user, 'doctor_profile', None)
+        if not doctor_profile:
+            return Diagnosis.objects.none()
+        
         return Diagnosis.objects.filter(
-            appointment__doctor=self.request.user
-        )
+            appointment__doctor=doctor_profile
+        ).select_related('appointment__patient__user').prefetch_related('prescriptions').order_by('-created_at')
+
 
 class PatientDiagnosisHistoryView(generics.ListAPIView):
+    """
+    View for patients to see their own diagnosis history
+    """
     serializer_class = DiagnosisSerializer
-    permission_classes = [permissions.IsAuthenticated, IsPatient]
-
+    permission_classes = [IsAuthenticated, IsPatient]
+    
     def get_queryset(self):
+        # Get patient profile
+        patient_profile = getattr(self.request.user, 'patient_profile', None)
+        if not patient_profile:
+            return Diagnosis.objects.none()
+        
         return Diagnosis.objects.filter(
-            appointment__patient=self.request.user
-        )
+            appointment__patient=patient_profile
+        ).select_related('appointment__doctor__user').prefetch_related('prescriptions').order_by('-created_at')
+
 
 class PrescriptionPDFView(generics.GenericAPIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -73,10 +125,11 @@ class PrescriptionPDFView(generics.GenericAPIView):
     def get(self, request, diagnosis_id):
         diagnosis = get_object_or_404(Diagnosis, id=diagnosis_id)
 
-        if (
-            diagnosis.appointment.doctor != request.user
-            and diagnosis.appointment.patient != request.user
-        ):
+        # Normalize to underlying user objects for comparison
+        doctor_user = getattr(diagnosis.appointment.doctor, "user", diagnosis.appointment.doctor)
+        patient_user = getattr(diagnosis.appointment.patient, "user", diagnosis.appointment.patient)
+
+        if doctor_user != request.user and patient_user != request.user:
             raise PermissionDenied("Not allowed")
 
         response = HttpResponse(content_type="application/pdf")
@@ -84,16 +137,22 @@ class PrescriptionPDFView(generics.GenericAPIView):
 
         p = canvas.Canvas(response)
         p.drawString(100, 800, "Medical Prescription")
-        p.drawString(100, 770, f"Diagnosis: {diagnosis.diagnosis}")
-        p.drawString(100, 740, f"Notes: {diagnosis.notes}")
+        p.drawString(100, 770, f"Patient: {patient_user.get_full_name() or patient_user.username}")
+        p.drawString(100, 740, f"Doctor: {doctor_user.get_full_name() or doctor_user.username}")
+        p.drawString(100, 710, f"Date: {diagnosis.created_at.strftime('%Y-%m-%d')}")
+        p.drawString(100, 680, f"Diagnosis: {diagnosis.diagnosis}")
+        p.drawString(100, 650, f"Notes: {diagnosis.notes}")
 
-        y = 700
+        y = 610
+        p.drawString(100, y, "Prescriptions:")
+        y -= 30
+        
         for pres in diagnosis.prescriptions.all():
             p.drawString(
-                100, y,
-                f"{pres.medicine_name} - {pres.dosage} - {pres.duration}"
+                120, y,
+                f"• {pres.medicine_name} - {pres.dosage} - {pres.duration}"
             )
-            y -= 20
+            y -= 25
 
         p.showPage()
         p.save()
@@ -114,602 +173,3 @@ class PrescriptionPDFView(generics.GenericAPIView):
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# from rest_framework import generics, permissions
-# from rest_framework.exceptions import NotFound, PermissionDenied
-# from django.http import HttpResponse
-# from django.shortcuts import get_object_or_404
-# from reportlab.pdfgen import canvas
-
-# from .models import DoctorProfile, Availability, Diagnosis
-# from .serializers import DoctorSerializer, AvailabilitySerializer, DiagnosisSerializer
-# from users.permissions import IsDoctor, IsPatient
-# from appointments.models import Appointment
-
-# class DoctorProfileView(generics.RetrieveUpdateAPIView):
-#     serializer_class = DoctorSerializer
-#     permission_classes = [permissions.IsAuthenticated, IsDoctor]
-
-#     def get_object(self):
-#         doctor = getattr(self.request.user, "doctor_profile", None)
-#         if not doctor:
-#             raise NotFound("Doctor profile not found")
-#         return doctor
-
-# class AvailabilityListCreateView(generics.ListCreateAPIView):
-#     serializer_class = AvailabilitySerializer
-#     permission_classes = [permissions.IsAuthenticated, IsDoctor]
-
-#     def get_queryset(self):
-#         return Availability.objects.filter(doctor=self.request.user.doctor_profile)
-
-#     def perform_create(self, serializer):
-#         serializer.save(doctor=self.request.user.doctor_profile)
-
-# class AvailabilityDetailView(generics.RetrieveUpdateDestroyAPIView):
-#     serializer_class = AvailabilitySerializer
-#     permission_classes = [permissions.IsAuthenticated, IsDoctor]
-
-#     def get_queryset(self):
-#         return Availability.objects.filter(doctor=self.request.user.doctor_profile)
-
-# class CreateDiagnosisAPIView(generics.CreateAPIView):
-#     serializer_class = DiagnosisSerializer
-#     permission_classes = [permissions.IsAuthenticated, IsDoctor]
-
-#     def perform_create(self, serializer):
-#         appointment = serializer.validated_data["appointment"]
-
-#         if appointment.doctor != self.request.user:
-#             raise PermissionDenied("You are not assigned to this appointment.")
-
-#         serializer.save()
-
-# class DoctorDiagnosisHistoryView(generics.ListAPIView):
-#     serializer_class = DiagnosisSerializer
-#     permission_classes = [permissions.IsAuthenticated, IsDoctor]
-
-#     def get_queryset(self):
-#         return Diagnosis.objects.filter(
-#             appointment__doctor=self.request.user
-#         )
-
-# class PatientDiagnosisHistoryView(generics.ListAPIView):
-#     serializer_class = DiagnosisSerializer
-#     permission_classes = [permissions.IsAuthenticated, IsPatient]
-
-#     def get_queryset(self):
-#         return Diagnosis.objects.filter(
-#             appointment__patient=self.request.user
-#         )
-
-# class PrescriptionPDFView(generics.GenericAPIView):
-#     permission_classes = [permissions.IsAuthenticated]
-
-#     def get(self, request, diagnosis_id):
-#         diagnosis = get_object_or_404(Diagnosis, id=diagnosis_id)
-
-#         if (
-#             diagnosis.appointment.doctor != request.user
-#             and diagnosis.appointment.patient != request.user
-#         ):
-#             raise PermissionDenied("Not allowed")
-
-#         response = HttpResponse(content_type="application/pdf")
-#         response["Content-Disposition"] = 'attachment; filename="prescription.pdf"'
-
-#         p = canvas.Canvas(response)
-#         p.drawString(100, 800, "Medical Prescription")
-#         p.drawString(100, 770, f"Diagnosis: {diagnosis.diagnosis}")
-#         p.drawString(100, 740, f"Notes: {diagnosis.notes}")
-
-#         y = 700
-#         for pres in diagnosis.prescriptions.all():
-#             p.drawString(
-#                 100, y,
-#                 f"{pres.medicine_name} - {pres.dosage} - {pres.duration}"
-#             )
-#             y -= 20
-
-#         p.showPage()
-#         p.save()
-#         return response
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# from rest_framework import generics, permissions
-# from rest_framework.exceptions import NotFound, PermissionDenied
-# from django.http import HttpResponse
-# from django.shortcuts import get_object_or_404
-# from reportlab.pdfgen import canvas
-
-# from .models import DoctorProfile, Availability, Diagnosis
-# from .serializers import DoctorSerializer, AvailabilitySerializer, DiagnosisSerializer
-# from users.permissions import IsDoctor
-
-
-# class DoctorProfileView(generics.RetrieveUpdateAPIView):
-#     serializer_class = DoctorSerializer
-#     permission_classes = [permissions.IsAuthenticated, IsDoctor]
-
-#     def get_object(self):
-#         doctor = getattr(self.request.user, "doctor_profile", None)
-#         if not doctor:
-#             raise NotFound("Doctor profile not found")
-#         return doctor
-
-
-# class AvailabilityListCreateView(generics.ListCreateAPIView):
-#     serializer_class = AvailabilitySerializer
-#     permission_classes = [permissions.IsAuthenticated, IsDoctor]
-
-#     def get_queryset(self):
-#         doctor = getattr(self.request.user, "doctor_profile", None)
-#         if not doctor:
-#             raise NotFound("Doctor profile not found")
-#         return Availability.objects.filter(doctor=doctor)
-
-#     def get_serializer_context(self):
-#         context = super().get_serializer_context()
-#         context["doctor"] = getattr(self.request.user, "doctor_profile", None)
-#         return context
-
-#     def perform_create(self, serializer):
-#         doctor = getattr(self.request.user, "doctor_profile", None)
-#         instance = serializer.save(doctor=doctor)
-#         instance.full_clean()
-#         instance.save()
-
-
-# class AvailabilityDetailView(generics.RetrieveUpdateDestroyAPIView):
-#     serializer_class = AvailabilitySerializer
-#     permission_classes = [permissions.IsAuthenticated, IsDoctor]
-
-#     def get_queryset(self):
-#         doctor = getattr(self.request.user, "doctor_profile", None)
-#         if not doctor:
-#             raise NotFound("Doctor profile not found")
-#         return Availability.objects.filter(doctor=doctor)
-
-#     def get_serializer_context(self):
-#         context = super().get_serializer_context()
-#         context["doctor"] = getattr(self.request.user, "doctor_profile", None)
-#         return context
-
-
-# class CreateDiagnosisAPIView(generics.CreateAPIView):
-#     queryset = Diagnosis.objects.all()
-#     serializer_class = DiagnosisSerializer
-#     permission_classes = [permissions.IsAuthenticated, IsDoctor]
-
-#     def perform_create(self, serializer):
-#         appointment = serializer.validated_data["appointment"]
-#         doctor_profile = getattr(self.request.user, "doctor_profile", None)
-
-#         if not doctor_profile:
-#             raise PermissionDenied("Doctor profile not found.")
-
-#         if appointment.doctor != self.request.user:
-#             raise PermissionDenied("You are not assigned to this appointment.")
-
-#         serializer.save()
-
-
-# class DoctorDiagnosisHistoryView(generics.ListAPIView):
-#     serializer_class = DiagnosisSerializer
-#     permission_classes = [permissions.IsAuthenticated, IsDoctor]
-
-#     def get_queryset(self):
-#         return Diagnosis.objects.filter(
-#             appointment__doctor=self.request.user
-#         ).select_related("appointment")
-
-
-# class PatientDiagnosisHistoryView(generics.ListAPIView):
-#     serializer_class = DiagnosisSerializer
-#     permission_classes = [permissions.IsAuthenticated]
-
-#     def get_queryset(self):
-#         return Diagnosis.objects.filter(
-#             appointment__patient=self.request.user
-#         ).select_related("appointment")
-
-
-# class PrescriptionPDFView(generics.GenericAPIView):
-#     permission_classes = [permissions.IsAuthenticated]
-
-#     def get(self, request, diagnosis_id):
-#         diagnosis = get_object_or_404(Diagnosis, id=diagnosis_id)
-
-#         # Authorization: doctor OR patient
-#         if (
-#             diagnosis.appointment.doctor != request.user
-#             and diagnosis.appointment.patient != request.user
-#         ):
-#             raise PermissionDenied("Not allowed to view this prescription")
-
-#         response = HttpResponse(content_type="application/pdf")
-#         response["Content-Disposition"] = 'attachment; filename="prescription.pdf"'
-
-#         p = canvas.Canvas(response)
-#         p.drawString(100, 800, "Medical Prescription")
-#         p.drawString(100, 770, f"Diagnosis: {diagnosis.diagnosis}")
-#         p.drawString(100, 740, f"Notes: {diagnosis.notes}")
-
-#         y = 700
-#         for pres in diagnosis.prescriptions.all():
-#             p.drawString(
-#                 100,
-#                 y,
-#                 f"{pres.medicine_name} - {pres.dosage} - {pres.duration}",
-#             )
-#             y -= 20
-
-#         p.showPage()
-#         p.save()
-#         return response
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# from rest_framework import generics, permissions
-# from rest_framework.exceptions import NotFound
-# from .models import DoctorProfile, Availability, Diagnosis, Appointment
-# from .serializers import DoctorSerializer, AvailabilitySerializer, DiagnosisSerializer 
-# from users.permissions import IsDoctor
-# from django.http import HttpResponse
-# from reportlab.pdfgen import canvas
-# from django.shortcuts import get_object_or_404
-
-
-# class DoctorProfileView(generics.RetrieveUpdateAPIView):
-#     """
-#     Retrieve & update the authenticated doctor's profile.
-#     """
-#     serializer_class = DoctorSerializer
-#     permission_classes = [permissions.IsAuthenticated, IsDoctor]
-
-#     def get_object(self):
-#         doctor = getattr(self.request.user, "doctor_profile", None)
-#         if not doctor:
-#             raise NotFound("Doctor profile not found")
-#         return doctor
-
-
-# class AvailabilityListCreateView(generics.ListCreateAPIView):
-#     serializer_class = AvailabilitySerializer
-#     permission_classes = [permissions.IsAuthenticated, IsDoctor]
-
-#     def get_queryset(self):
-#         doctor = getattr(self.request.user, "doctor_profile", None)
-#         if not doctor:
-#             raise NotFound("Doctor profile not found")
-#         return Availability.objects.filter(doctor=doctor)
-
-#     def get_serializer_context(self):
-#         context = super().get_serializer_context()
-#         context["doctor"] = getattr(self.request.user, "doctor_profile", None)
-#         return context
-
-#     def perform_create(self, serializer):
-#         doctor = getattr(self.request.user, "doctor_profile", None)
-#         instance = serializer.save(doctor=doctor)
-#         instance.full_clean()
-#         instance.save()
-
-
-# class AvailabilityDetailView(generics.RetrieveUpdateDestroyAPIView):
-#     serializer_class = AvailabilitySerializer
-#     permission_classes = [permissions.IsAuthenticated, IsDoctor]
-
-#     def get_queryset(self):
-#         doctor = getattr(self.request.user, "doctor_profile", None)
-#         if not doctor:
-#             raise NotFound("Doctor profile not found")
-#         return Availability.objects.filter(doctor=doctor)
-
-#     def get_serializer_context(self):
-#         context = super().get_serializer_context()
-#         context["doctor"] = getattr(self.request.user, "doctor_profile", None)
-#         return context
-
-# class CreateDiagnosisAPIView(generics.CreateAPIView): 
-#     queryset = Diagnosis.objects.all()
-#     serializer_class = DiagnosisSerializer
-#     permission_classes = [permissions.IsAuthenticated, IsDoctor]
-
-#     def perform_create(self, serializer):  
-#         appointment = serializer.validated_data["appointment"]
-#         doctor_profile = getattr(self.request.user, "doctor_profile", None)  
-        
-#         if not doctor_profile:
-#             raise PermissionDenied("Doctor profile not found.") 
-        
-#         # Appointment.doctor is User, not DoctorProfile
-#         if appointment.doctor != self.request.user:
-#             raise PermissionDenied("You are not assigned to this appointment.")
-
-#         serializer.save()         
-
-
-# class DoctorDiagnosisHistoryView(generics.ListAPIView):
-#     serializer_class = DiagnosisSerializer
-#     permission_classes = [permissions.IsAuthenticated, IsDoctor]
-
-#     def get_queryset(self):
-#         return Diagnosis.objects.filter(
-#             appointment__doctor=self.request.user
-#         ).select_related("appointment")
-
-
-# class PatientDiagnosisHistoryView(generics.ListAPIView):
-#     serializer_class = DiagnosisSerializer
-#     permission_classes = [permissions.IsAuthenticated]
-
-#     def get_queryset(self):
-#         return Diagnosis.objects.filter(
-#             appointment__patient=self.request.user
-#         ).select_related("appointment")
-
-
-# class PrescriptionPDFView(generics.GenericAPIView):
-#     permission_classes = [permissions.IsAuthenticated]  
-    
-#     def get(self, request, diagnosis_id):
-#         diagnosis = get_object_or_404(Diagnosis, id=diagnosis_id) 
-        
-#     # Authorization
-#         if (
-#             diagnosis.appointment.doctor != request.user
-#             and diagnosis.appointment.patient != request.user
-#         ):
-#             raise PermissionDenied("Not allowed to view this prescription")
-
-#     response = HttpResponse(content_type="application/pdf")
-#     response["Content-Disposition"] = 'attachment; filename="prescription.pdf"'
-
-#     p = canvas.Canvas(response)
-#     p.drawString(100, 800, "Medical Prescription")
-#     p.drawString(100, 770, f"Diagnosis: {diagnosis.diagnosis}")
-#     p.drawString(100, 740, f"Notes: {diagnosis.notes}")
-
-#     y = 700
-#     for pres in diagnosis.prescriptions.all():
-#         p.drawString(
-#             100, y,
-#             f"{pres.medicine_name} - {pres.dosage} - {pres.duration}"
-#         )
-#         y -= 20
-
-#     p.showPage()
-#     p.save()
-#     return response
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# from rest_framework import generics, permissions
-# from rest_framework.exceptions import NotFound
-# from .models import DoctorProfile, Availability
-# from .serializers import DoctorSerializer, AvailabilitySerializer
-# from users.permissions import IsDoctor
-
-
-# class DoctorProfileView(generics.RetrieveUpdateAPIView):
-#     """
-#     GET: Retrieve doctor profile
-#     PATCH: Update doctor profile
-#     """
-#     serializer_class = DoctorSerializer
-#     permission_classes = [permissions.IsAuthenticated, IsDoctor]
-
-#     def get_object(self):
-#         try:
-#             return Doctor.objects.get(user=self.request.user)
-#         except Doctor.DoesNotExist:
-#             raise NotFound("Doctor profile not found")
-
-#     def get_doctor(self):
-#         doctor = getattr(self.request.user, "doctor_profile", None)
-#         if not doctor:
-#             raise NotFound("Doctor profile not found")
-#         return doctor
-
-
-
-# class AvailabilityListCreateView(generics.ListCreateAPIView):
-#     serializer_class = AvailabilitySerializer
-#     permission_classes = [permissions.IsAuthenticated, IsDoctor]
-
-#     def get_queryset(self):
-#         doctor = getattr(self.request.user, "doctor_profile", None)
-#         if not doctor:
-#             raise NotFound("Doctor profile not found")
-
-#         return Availability.objects.filter(doctor=doctor)
-
-#     def get_serializer_context(self):
-#         context = super().get_serializer_context()
-#         context["doctor"] = getattr(self.request.user, "doctor_profile", None)
-#         return context
-
-#     def perform_create(self, serializer):
-#         doctor = getattr(self.request.user, "doctor_profile", None)
-#         instance = serializer.save(doctor=doctor)
-#         instance.full_clean()
-#         instance.save()
-
-
-# class AvailabilityDetailView(generics.RetrieveUpdateDestroyAPIView):
-#     serializer_class = AvailabilitySerializer
-#     permission_classes = [permissions.IsAuthenticated, IsDoctor]
-
-#     def get_queryset(self):
-#         doctor = getattr(self.request.user, "doctor_profile", None)
-#         if not doctor:
-#             raise NotFound("Doctor profile not found")
-
-#         return Availability.objects.filter(doctor=doctor)
-
-#     def get_serializer_context(self):
-#         context = super().get_serializer_context()
-#         context["doctor"] = getattr(self.request.user, "doctor_profile", None)
-#         return context

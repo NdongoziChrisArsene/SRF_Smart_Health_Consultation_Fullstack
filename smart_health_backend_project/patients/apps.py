@@ -5,55 +5,9 @@ class PatientsConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "patients"
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# from django.apps import AppConfig
-
-
-# class PatientsConfig(AppConfig):
-#     default_auto_field = "django.db.models.BigAutoField"
-#     name = "patients"
-
-#     def ready(self):
-#         import patients.signals  # noqa
-
-
-
-
-
-
+    def ready(self):
+        """Import signals when app is ready"""
+        import patients.signals  # noqa
 
 
 
@@ -90,85 +44,5 @@ class PatientsConfig(AppConfig):
 #     default_auto_field = "django.db.models.BigAutoField"
 #     name = "patients"
 
-#     def ready(self):
-#         import patients.signals
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# from django.apps import AppConfig
-
-
-# class PatientsConfig(AppConfig):
-#     default_auto_field = "django.db.models.BigAutoField"
-#     name = "patients"
-
-#     def ready(self):
-#         import patients.signals
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# from django.apps import AppConfig
-
-
-# class PatientsConfig(AppConfig):
-#     default_auto_field = 'django.db.models.BigAutoField'
-#     name = 'patients'
-
-#     def ready(self):
-#         import patients.signals
 

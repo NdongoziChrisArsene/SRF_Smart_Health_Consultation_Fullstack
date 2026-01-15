@@ -8,7 +8,7 @@ from django.utils import timezone
 
 from users.models import User
 from patients.models import PatientProfile
-from doctors.models import DoctorProfile
+from doctors.models import DoctorProfile, Availability
 from appointments.models import Appointment
 from rest_framework.exceptions import ValidationError
 
@@ -36,14 +36,14 @@ class AppointmentTests(TestCase):
             email="a@example.com"
         )
 
-        # Create profiles
-        self.patient = Patient.objects.create(user=self.patient_user)
-        self.doctor = Doctor.objects.create(
-            user=self.doctor_user,
-            specialization="Cardiology",
-            location="City Hospital",
-            years_of_experience=5
-        )
+        # Create or get profiles (signals may auto-create profiles on user creation)
+        self.patient, _ = PatientProfile.objects.get_or_create(user=self.patient_user)
+        self.doctor, _ = DoctorProfile.objects.get_or_create(user=self.doctor_user)
+        # Ensure fields required by tests
+        self.doctor.specialization = "Cardiology"
+        self.doctor.location = "City Hospital"
+        self.doctor.years_of_experience = 5
+        self.doctor.save()
 
         # URLs
         self.create_url = reverse("patient-create")
@@ -116,7 +116,11 @@ class AppointmentTests(TestCase):
         list_url = reverse("doctor-list")
         response = self.client.get(list_url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertTrue(any(item["id"] == appt.id for item in response.json()))
+
+        data = response.json()
+        # Support paginated responses (dict with `results`) and plain lists
+        items = data.get("results", data) if isinstance(data, dict) else data
+        self.assertTrue(any(item["id"] == appt.id for item in items))
 
         update_url = reverse("doctor-update-status", args=[appt.id])
         response2 = self.client.patch(update_url, {"status": "approved"}, format="json")

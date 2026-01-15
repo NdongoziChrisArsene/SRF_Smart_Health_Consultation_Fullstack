@@ -1,75 +1,208 @@
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import ProtectedRoute from "./components/ProtectedRoute";
+import Navbar from "./components/Navbar";
 
+// Auth pages
 import Login from "./pages/auth/Login";
 import Register from "./pages/auth/Register";
 import ForgotPassword from "./pages/auth/ForgotPassword";
+import ResetPassword from "./pages/auth/ResetPassword";
 
-// ================= PATIENT PAGES =================
-import PatientDashboard from "./pages/patient/PatientDashboard";
-import BookAppointment from "./pages/patient/BookAppointment";
-import MedicalHistory from "./pages/patient/MedicalHistory";
-import SymptomChecker from "./pages/patient/SymptomChecker";
-import RecommendedDoctors from "./pages/patient/RecommendedDoctors";
-
-// ================= DOCTOR PAGES =================
-import DoctorDashboard from "./pages/doctor/Dashboard";
-import DoctorAppointments from "./pages/doctor/Appointments";
-import DoctorAvailability from "./pages/doctor/Availability";
-import DoctorPatientHistory from "./pages/doctor/PatientHistory";
-
-// ================= ADMIN PAGES =================
+// Admin pages
 import AdminDashboard from "./pages/admin/Dashboard";
 import ManageAppointments from "./pages/admin/ManageAppointments";
 import ManageDoctors from "./pages/admin/ManageDoctors";
 import Reports from "./pages/admin/Reports";
 
-export default function App() {
+// Doctor pages
+import DoctorDashboard from "./pages/doctor/Dashboard";
+import DoctorAppointments from "./pages/doctor/Appointments";
+import Availability from "./pages/doctor/Availability";
+import PatientHistory from "./pages/doctor/PatientHistory";
+import AddDiagnosis from "./pages/doctor/AddDiagnosis";
+
+// Patient pages  
+import Appointments from "./pages/patient/Appointment";
+import PatientDashboard from "./pages/patient/PatientDashboard";
+import BookAppointment from "./pages/patient/BookAppointment";
+import MedicalHistory from "./pages/patient/MedicalHistory";
+import RecommendedDoctors from "./pages/patient/RecommendedDoctors";
+import SymptomChecker from "./pages/patient/SymptomChecker";
+
+function App() {
+  const location = useLocation();
+
+  // Pages where Navbar should NOT appear
+  const authRoutes = [
+    "/login",
+    "/register",
+    "/forgot-password",
+  ];
+
+  const hideNavbar =
+    authRoutes.includes(location.pathname) ||
+    location.pathname.startsWith("/reset-password");
+
   return (
     <>
-      {/* Example Tailwind dark mode div, can be moved anywhere */}
-      <div className="p-6 bg-white dark:bg-gray-900 text-black dark:text-white">
-        Tailwind Dark Mode Test
-      </div>
+      {!hideNavbar && <Navbar />}
 
       <Routes>
-        {/* ================= PUBLIC ROUTES ================= */}
-        <Route path="/" element={<Navigate to="/login" />} />
+        {/* Public */}
+        <Route path="/" element={<Navigate to="/login" replace />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password/:token" element={<ResetPassword />} />
 
-        {/* ================= PATIENT ROUTES ================= */}
-        <Route element={<ProtectedRoute allowedRoles={["patient"]} />}>
-          <Route path="/patient" element={<PatientDashboard />} />
-          <Route path="/patient/book" element={<BookAppointment />} />
-          <Route path="/patient/history" element={<MedicalHistory />} />
-          <Route path="/patient/symptoms" element={<SymptomChecker />} />
-          <Route path="/patient/recommendations" element={<RecommendedDoctors />} />
-        </Route>
+        {/* Admin */}
+        <Route
+          path="/admin"
+          element={
+            <ProtectedRoute allowedRoles={["admin"]}>
+              <AdminDashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/manage-appointments"
+          element={
+            <ProtectedRoute allowedRoles={["admin"]}>
+              <ManageAppointments />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/manage-doctors"
+          element={
+            <ProtectedRoute allowedRoles={["admin"]}>
+              <ManageDoctors />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/reports"
+          element={
+            <ProtectedRoute allowedRoles={["admin"]}>
+              <Reports />
+            </ProtectedRoute>
+          }
+        />
 
-        {/* ================= DOCTOR ROUTES ================= */}
-        <Route element={<ProtectedRoute allowedRoles={["doctor"]} />}>
-          <Route path="/doctor" element={<DoctorDashboard />} />
-          <Route path="/doctor/appointments" element={<DoctorAppointments />} />
-          <Route path="/doctor/availability" element={<DoctorAvailability />} />
-          <Route path="/doctor/patients" element={<DoctorPatientHistory />} />
-        </Route>
+        {/* Doctor */}
+        <Route
+          path="/doctor"
+          element={
+            <ProtectedRoute allowedRoles={["doctor"]}>
+              <DoctorDashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/doctor/appointments"
+          element={
+            <ProtectedRoute allowedRoles={["doctor"]}>
+              <DoctorAppointments />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/doctor/availability"
+          element={
+            <ProtectedRoute allowedRoles={["doctor"]}>
+              <Availability />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/doctor/patient-history"
+          element={
+            <ProtectedRoute allowedRoles={["doctor"]}>
+              <PatientHistory />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/doctor/add-diagnosis"
+          element={
+            <ProtectedRoute allowedRoles={["doctor"]}>
+              <AddDiagnosis />
+            </ProtectedRoute>
+          }
+        />
 
-        {/* ================= ADMIN ROUTES ================= */}
-        <Route element={<ProtectedRoute allowedRoles={["admin"]} />}>
-          <Route path="/admin" element={<AdminDashboard />} />
-          <Route path="/admin/appointments" element={<ManageAppointments />} />
-          <Route path="/admin/doctors" element={<ManageDoctors />} />
-          <Route path="/admin/reports" element={<Reports />} />
-        </Route>
-
-        {/* ================= FALLBACK ================= */}
-        <Route path="*" element={<Navigate to="/login" />} />
+        {/* Patient */}
+        <Route
+          path="/patient"
+          element={
+            <ProtectedRoute allowedRoles={["patient"]}>
+              <PatientDashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/patient/book-appointment"
+          element={
+            <ProtectedRoute allowedRoles={["patient"]}>
+              <BookAppointment />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/patient/medical-history"
+          element={
+            <ProtectedRoute allowedRoles={["patient"]}>
+              <MedicalHistory />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/patient/recommended-doctors"
+          element={
+            <ProtectedRoute allowedRoles={["patient"]}>
+              <RecommendedDoctors />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/patient/symptom-checker"
+          element={
+            <ProtectedRoute allowedRoles={["patient"]}>
+              <SymptomChecker />
+            </ProtectedRoute>
+          }
+        />  
+        <Route
+          path="/patient/appointments"
+          element={
+            <ProtectedRoute allowedRoles={["patient"]}>
+              <Appointments />
+            </ProtectedRoute>
+          }
+        />
       </Routes>
     </>
   );
 }
+
+export default App;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

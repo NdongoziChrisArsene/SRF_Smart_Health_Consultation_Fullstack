@@ -1,132 +1,53 @@
-import google.generativeai as genai
-from django.conf import settings
+# ai/gemini_utils.py
 import logging
+from django.conf import settings
 
 logger = logging.getLogger("ai")
 
-genai.configure(api_key=settings.GEMINI_API_KEY)
-
+# Default model
 MODEL_NAME = getattr(settings, "GEMINI_MODEL", "gemini-1.5-flash")
+
+# Make sure GEMINI_API_KEY is set (log at import time without importing heavy SDK)
+if not getattr(settings, "GEMINI_API_KEY", None):
+    logger.warning("GEMINI_API_KEY is not set. AI features will not work.")
 
 
 def call_gemini(prompt: str) -> str:
-    try:
-        model = genai.GenerativeModel(MODEL_NAME)
-        response = model.generate_content(prompt)
+    """
+    Calls Google Gemini API with the provided prompt.
+    Returns the AI-generated text. Performs lazy import of the SDK so management
+    commands and tests don't import large optional dependencies at module import time.
+    """
+    api_key = getattr(settings, "GEMINI_API_KEY", None)
+    if not api_key:
+        return "GEMINI_API_KEY is not configured."
 
-        if response and hasattr(response, "text"):
-            return response.text.strip()
+    try:
+        # Lazy import to avoid heavy imports during manage.py commands
+        import google.genai as genai
+    except Exception:
+        logger.exception("Failed to import google.genai SDK")
+        return "AI service is not available."
+
+    try:
+        # Create a client
+        client = genai.Client(api_key=api_key)
+
+        # Generate content
+        response = client.generate_text(
+            model=MODEL_NAME,
+            prompt=prompt
+        )
+
+        # Response is now a dict with 'candidates'
+        if response and response.candidates:
+            return response.candidates[0].output_text.strip()
 
         return "No response generated."
 
     except Exception:
         logger.exception("Gemini API failure")
         return "AI service is temporarily unavailable."
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# import google.genai as genai
-# from django.conf import settings
-# import logging
-
-# # Dedicated AI logger
-# logger = logging.getLogger("ai")
-
-# # -------------------------------------------------
-# # Gemini Configuration
-# # -------------------------------------------------
-# try:
-#     genai.configure(api_key=settings.GEMINI_API_KEY)
-#     logger.info("Gemini API configured successfully.")
-# except Exception as e:
-#     logger.error("Gemini initialization failed", exc_info=True)
-
-# MODEL_NAME = getattr(settings, "GEMINI_MODEL", "gemini-1.5-flash")
-
-# # -------------------------------------------------
-# # Safe Wrapper for all AI calls
-# # -------------------------------------------------
-# def call_gemini(prompt: str) -> str:
-#     try:
-#         MODEL = genai.GenerativeModel(MODEL_NAME)
-#         response = MODEL.generate_content(prompt)
-
-#         if hasattr(response, "text") and response.text:
-#             return response.text.strip()
-
-#         logger.warning("Empty AI response.")
-#         return "The AI could not generate a response."
-
-#     except Exception as e:
-#         logger.error("Gemini API Error", exc_info=True)
-#         return "AI service unavailable. Please try again."
-
-
-
-
-
-
-
-
-
-
 
 
 

@@ -1,3 +1,92 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  :root {
+    --brand-yellow: #FDE68A;
+    --brand-red: #DC2626;
+    --brand-bg-from: #f8fafc; /* slate-50 */
+    --brand-bg-to: #ffffff;
+  }
+
+  body {
+    /* subtle, professional background */
+    background: linear-gradient(180deg, var(--brand-bg-from) 0%, var(--brand-bg-to) 100%);
+    color: #0f172a; /* slate-900 */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    min-height: 100vh;
+    box-sizing: border-box;
+  }
+}
+
+@layer components {
+  /* Generic component style */
+  .card, .component {
+    background-color: #ffffff; /* white cards for better contrast */
+    color: #0f172a; /* slate-900 */
+    border-radius: .5rem;
+    border: 1px solid rgba(15,23,42,0.04);
+    box-shadow: 0 6px 18px rgba(15,23,42,0.06);
+    padding: 1rem;
+  }
+
+  /* Button, input and icon helpers */
+  .btn-primary {
+    background-color: #DC2626; /* brand-red */
+    color: #fff;
+    padding: .5rem 1rem;
+    border-radius: .375rem;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    transition: background-color .15s ease, transform .08s ease;
+  }
+  .btn-primary:hover {
+    background-color: #B91C1C; /* brand-red-dark */
+    transform: translateY(-1px);
+  }
+
+  /* Inputs and form controls */
+  input, textarea, select, .input {
+    width: 100%;
+    max-width: 100%; /* ensure controls never overflow their container */
+    min-width: 0; /* allow controls to shrink inside flex/table cells */
+    box-sizing: border-box; /* ensure padding doesn't increase width */
+    padding: .5rem 1rem;
+    border: 1px solid #d1d5db; /* gray-300 */
+    border-radius: .5rem;
+    transition: box-shadow .15s ease, border-color .15s ease;
+    background-color: transparent;
+  }
+  input:focus, textarea:focus, select:focus, .input:focus {
+    box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.08);
+    border-color: #DC2626;
+    outline: none;
+  }
+
+  /* Table inputs should not expand columns */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed; /* prevents columns from resizing with long content */
+  }
+  table td, table th {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  table td input, table th input, table td .input, table th .input {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
+  /* Icon helpers: make SVG icons use current text color */
+  .icon,
+  .icon * {
+    color: #DC2626;
+  }
+  svg, svg * {
+    fill: currentColor !important;
+  }
+} 

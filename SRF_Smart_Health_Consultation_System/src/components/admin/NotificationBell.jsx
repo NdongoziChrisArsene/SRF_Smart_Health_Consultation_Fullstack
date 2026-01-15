@@ -16,7 +16,7 @@ export default function NotificationBell() {
       </button>
 
       {open && (
-        <div className="absolute right-0 bg-white shadow rounded w-64 mt-2">
+        <div className="absolute right-0 bg-brand-yellow shadow rounded w-64 mt-2">
           {notifications.map((n, i) => (
             <div key={i} className="p-2 border-b text-sm">
               {n}

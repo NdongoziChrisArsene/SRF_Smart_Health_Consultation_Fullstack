@@ -18,7 +18,7 @@ export default function ManageDoctors() {
       {loading && <p>Loading...</p>}
 
       {doctors.map(d => (
-        <div key={d.id} className="bg-white p-4 shadow rounded mb-2">
+        <div key={d.id} className="bg-brand-yellow p-4 shadow rounded mb-2">
           <p><strong>Name:</strong> {d.name}</p>
           <p><strong>Specialty:</strong> {d.specialty}</p>
           <p><strong>Status:</strong> {d.is_active ? "Active" : "Inactive"}</p>

@@ -14,7 +14,7 @@ export default function AIInsights({ stats }) {
   }
 
   return (
-    <div className="bg-white p-4 shadow rounded">
+    <div className="bg-brand-yellow p-4 shadow rounded">
       <h2 className="font-semibold mb-2">AI Insights</h2>
       <ul className="list-disc pl-5 space-y-1">
         {insights.length ? insights.map((i, idx) => (

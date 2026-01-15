@@ -1,47 +1,108 @@
+# from celery import shared_task
+# from django.core.files.base import ContentFile
+# from django.core.mail import EmailMessage
+# from django.utils import timezone
+
+# from .models import Report
+
+
+# @shared_task(bind=True, autoretry_for=(Exception,), retry_kwargs={"max_retries": 3})
+# def generate_report_task(self, report_id, report_type, start_date, end_date, email):
+#     report = Report.objects.get(id=report_id)
+
+#     # Simulated report content (replace later with real CSV/PDF)
+#     content = (
+#         f"Report type: {report_type}\n"
+#         f"From: {start_date}\n"
+#         f"To: {end_date}\n"
+#         f"Generated at: {timezone.now()}\n"
+#     )
+
+#     report.file.save(
+#         f"{report_type}_report_{report_id}.txt",
+#         ContentFile(content.encode("utf-8")),
+#     )
+
+#     report.is_ready = True
+#     report.save(update_fields=["file", "is_ready"])
+
+#     if email:
+#         msg = EmailMessage(
+#             subject="Your report is ready",
+#             body="Please find your report attached.",
+#             to=[email],
+#         )
+#         msg.attach(report.file.name, report.file.read())
+#         msg.send()
+
+
+
+
+
+
+
+
+# reports/tasks.py
+import logging
 from celery import shared_task
 from django.core.files.base import ContentFile
 from django.core.mail import EmailMessage
 from django.utils import timezone
+from django.conf import settings
 
 from .models import Report
 
+logger = logging.getLogger("reports")
 
 @shared_task(bind=True, autoretry_for=(Exception,), retry_kwargs={"max_retries": 3})
-def generate_report_task(self, report_id, report_type, start_date, end_date, email):
-    report = Report.objects.get(id=report_id)
+def generate_report_task(self, report_id, report_type, start_date, end_date, email=None):
+    """
+    Generates a report and optionally sends it via email.
+    Safe, idempotent, and retries on failure.
+    """
+    try:
+        report = Report.objects.get(id=report_id)
 
-    # Simulated report content (replace later with real CSV/PDF)
-    content = (
-        f"Report type: {report_type}\n"
-        f"From: {start_date}\n"
-        f"To: {end_date}\n"
-        f"Generated at: {timezone.now()}\n"
-    )
-
-    report.file.save(
-        f"{report_type}_report_{report_id}.txt",
-        ContentFile(content.encode("utf-8")),
-    )
-
-    report.is_ready = True
-    report.save(update_fields=["file", "is_ready"])
-
-    if email:
-        msg = EmailMessage(
-            subject="Your report is ready",
-            body="Please find your report attached.",
-            to=[email],
+        # Simulated report content (replace with real CSV/PDF generation later)
+        content = (
+            f"Report type: {report_type}\n"
+            f"From: {start_date}\n"
+            f"To: {end_date}\n"
+            f"Generated at: {timezone.now()}\n"
         )
-        msg.attach(report.file.name, report.file.read())
-        msg.send()
 
+        # Save report content to file field
+        filename = f"{report_type}_report_{report_id}.txt"
+        report.file.save(filename, ContentFile(content.encode("utf-8")), save=False)
+        report.is_ready = True
+        report.save(update_fields=["file", "is_ready"])
 
+        # Send email if provided
+        if email:
+            try:
+                msg = EmailMessage(
+                    subject="Your report is ready",
+                    body="Please find your report attached.",
+                    to=[email],
+                )
+                # Reset file pointer before attaching
+                report.file.open(mode="rb")
+                msg.attach(report.file.name, report.file.read())
+                report.file.close()
+                msg.send()
+                logger.info(f"Report {report_id} sent to {email}")
+            except Exception as e:
+                logger.error(f"Failed to send report {report_id} to {email}: {e}")
 
+        return f"Report {report_id} generated successfully."
 
+    except Report.DoesNotExist:
+        logger.error(f"Report with id {report_id} does not exist.")
+        return f"Report {report_id} not found."
 
-
-
-
+    except Exception as e:
+        logger.exception(f"Error generating report {report_id}")
+        raise self.retry(exc=e)
 
 
 

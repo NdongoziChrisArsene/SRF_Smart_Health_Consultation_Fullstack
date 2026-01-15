@@ -9,7 +9,7 @@ import {
 
 export default function AppointmentChart({ data }) {
   return (
-    <div className="bg-white p-4 shadow rounded">
+    <div className="bg-brand-yellow p-4 shadow rounded">
       <h2 className="font-semibold mb-3">Appointment Trend</h2>
 
       <ResponsiveContainer width="100%" height={300}>

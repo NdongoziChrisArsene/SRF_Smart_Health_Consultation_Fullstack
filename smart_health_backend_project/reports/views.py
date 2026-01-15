@@ -42,13 +42,20 @@ class GenerateReportView(generics.CreateAPIView):
 
         report = serializer.save(generated_by=request.user)
 
-        generate_report_task.delay(
-            report.id,
-            report_type,
-            start_date,
-            end_date,
-            request.user.email,
-        )
+        # Try to enqueue the Celery task; if broker is unavailable (e.g., in dev/test),
+        # fall back to executing the task synchronously so the API remains usable.
+        try:
+            generate_report_task.delay(
+                report.id,
+                report_type,
+                start_date,
+                end_date,
+                request.user.email,
+            )
+        except Exception as e:
+            logger.warning("Failed to enqueue report task, running synchronously: %s", e)
+            # Run synchronously as a fallback without invoking Celery internals
+            generate_report_task.run(report.id, report_type, start_date, end_date, request.user.email)
 
         return Response(
             {

@@ -24,7 +24,7 @@ export default function ManageAppointments() {
 
       <div className="space-y-4">
         {appointments.map((a) => (
-          <div key={a.id} className="bg-white p-4 shadow rounded">
+          <div key={a.id} className="bg-brand-yellow p-4 shadow rounded">
             <p><strong>Patient:</strong> {a.patient_name}</p>
             <p><strong>Doctor:</strong> {a.doctor_name}</p>
             <p><strong>Date:</strong> {a.date}</p>

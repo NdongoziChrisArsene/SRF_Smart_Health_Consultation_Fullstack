@@ -1,26 +1,13 @@
-// src/services/ai.service.js
+import API from "./api";
 
-import api from "./api";
+export const checkSymptoms = (symptoms) => {
+  return API.post("/ai/check-symptoms/", { symptoms });
+};
 
-/* =====================================================
-   AI SERVICE
-   → Handles symptom checking via backend AI endpoint
-===================================================== */
+export const getDoctorRecommendations = (data) => {
+  return API.post("/ai/recommend-doctors/", data);
+};
 
-/**
- * checkSymptoms
- * Sends patient's symptoms to the backend AI endpoint
- * and returns recommended doctors or insights.
- *
- * @param {Object} data - The symptom data, e.g. { symptoms: ["fever", "cough"] }
- * @returns {Promise<Object>} - Response data from backend
- */
-export const checkSymptoms = async (data) => {
-  try {
-    const response = await api.post("/ai/check-symptoms/", data);
-    return response.data; // e.g., { recommendedDoctors: [...], insights: [...] }
-  } catch (error) {
-    console.error("AI service error:", error);
-    throw error;
-  }
+export const analyzeMedicalReport = (reportData) => {
+  return API.post("/ai/analyze-report/", reportData);
 };

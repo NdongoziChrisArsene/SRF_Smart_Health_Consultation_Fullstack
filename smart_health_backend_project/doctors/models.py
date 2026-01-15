@@ -1,64 +1,87 @@
 from django.db import models
 from django.conf import settings
 from django.core.exceptions import ValidationError
-# Reference Appointment by string to avoid circular import
-# (appointments.Appointment will be referenced by string in the Diagnosis model)
+
 
 class DoctorProfile(models.Model):
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
-        related_name="doctor_profile"
+        related_name='doctor_profile'
     )
     specialization = models.CharField(max_length=100)
-    location = models.CharField(max_length=100)
+    location = models.CharField(max_length=200)
+    bio = models.TextField(blank=True)
     years_of_experience = models.PositiveIntegerField(default=0)
+    phone_number = models.CharField(max_length=20, blank=True)
+    is_verified = models.BooleanField(default=False)
+    rating = models.DecimalField(max_digits=3, decimal_places=2, default=0.00)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Doctor Profile"
+        verbose_name_plural = "Doctor Profiles"
 
     def __str__(self):
-        return f"Doctor: {self.user.username}"
+        return f"Dr. {self.user.get_full_name() or self.user.username}"
+
 
 class Availability(models.Model):
-    DAYS = (
-        ("Monday", "Monday"),
-        ("Tuesday", "Tuesday"),
-        ("Wednesday", "Wednesday"),
-        ("Thursday", "Thursday"),
-        ("Friday", "Friday"),
-        ("Saturday", "Saturday"),
-        ("Sunday", "Sunday"),
-    )
-
+    DAYS_OF_WEEK = [
+        ('Monday', 'Monday'),
+        ('Tuesday', 'Tuesday'),
+        ('Wednesday', 'Wednesday'),
+        ('Thursday', 'Thursday'),
+        ('Friday', 'Friday'),
+        ('Saturday', 'Saturday'),
+        ('Sunday', 'Sunday'),
+    ]
+    
     doctor = models.ForeignKey(
         DoctorProfile,
         on_delete=models.CASCADE,
-        related_name="availabilities"
+        related_name='availability'
     )
-    day_of_week = models.CharField(max_length=10, choices=DAYS)
+    day_of_week = models.CharField(max_length=10, choices=DAYS_OF_WEEK)
     start_time = models.TimeField()
     end_time = models.TimeField()
-
+    
     class Meta:
-        ordering = ["day_of_week", "start_time"]
+        verbose_name = "Availability"
+        verbose_name_plural = "Availabilities"
+        unique_together = ('doctor', 'day_of_week', 'start_time')
+        ordering = ['day_of_week', 'start_time']
+
+    def __str__(self):
+        return f"{self.doctor.user.username} - {self.day_of_week} ({self.start_time}-{self.end_time})"
 
     def clean(self):
-        if self.start_time >= self.end_time:
-            raise ValidationError("Start time must be earlier than end time.")
+        """Validate that start_time is before end_time"""
+        if self.start_time and self.end_time and self.start_time >= self.end_time:
+            raise ValidationError("Start time must be before end time")
 
-        overlapping = Availability.objects.filter(
-            doctor=self.doctor,
-            day_of_week=self.day_of_week,
-            start_time__lt=self.end_time,
-            end_time__gt=self.start_time,
-        ).exclude(id=self.id)
-
-        if overlapping.exists():
-            raise ValidationError("This time overlaps with another availability.")
 
 class Diagnosis(models.Model):
-    appointment = models.OneToOneField("appointments.Appointment", on_delete=models.CASCADE)
+    appointment = models.OneToOneField(
+        "appointments.Appointment", 
+        on_delete=models.CASCADE,
+        related_name='diagnosis'
+    )
     diagnosis = models.TextField()
     notes = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Diagnosis"
+        verbose_name_plural = "Diagnoses"
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Diagnosis for Appointment #{self.appointment.id}"
+
 
 class Prescription(models.Model):
     diagnosis = models.ForeignKey(
@@ -69,8 +92,15 @@ class Prescription(models.Model):
     medicine_name = models.CharField(max_length=100)
     dosage = models.CharField(max_length=50)
     duration = models.CharField(max_length=50)
+    created_at = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        verbose_name = "Prescription"
+        verbose_name_plural = "Prescriptions"
+        ordering = ['created_at']
 
+    def __str__(self):
+        return f"{self.medicine_name} - {self.dosage}"
 
 
 
@@ -103,325 +133,3 @@ class Prescription(models.Model):
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# from django.db import models
-# from django.conf import settings
-# from django.core.exceptions import ValidationError
-# from appointments.models import Appointment
-
-
-
-# class DoctorProfile(models.Model):
-#     user = models.OneToOneField(
-#         settings.AUTH_USER_MODEL,
-#         on_delete=models.CASCADE,
-#         related_name="doctor_profile"
-#     )
-#     specialization = models.CharField(max_length=100)
-#     location = models.CharField(max_length=100)
-#     years_of_experience = models.PositiveIntegerField(default=0)
-
-#     created_at = models.DateTimeField(auto_now_add=True)
-#     updated_at = models.DateTimeField(auto_now=True)
-
-#     def __str__(self):
-#         return f"Doctor: {self.user.username} ({self.specialization})"
-
-
-# class Availability(models.Model):
-#     DAYS = (
-#         ("Monday", "Monday"),
-#         ("Tuesday", "Tuesday"),
-#         ("Wednesday", "Wednesday"),
-#         ("Thursday", "Thursday"),
-#         ("Friday", "Friday"),
-#         ("Saturday", "Saturday"),
-#         ("Sunday", "Sunday"),
-#     )
-
-#     doctor = models.ForeignKey(
-#         DoctorProfile,
-#         on_delete=models.CASCADE,
-#         related_name="availabilities"
-#     )
-#     day_of_week = models.CharField(max_length=10, choices=DAYS)
-#     start_time = models.TimeField()
-#     end_time = models.TimeField()
-
-#     class Meta:
-#         ordering = ["day_of_week", "start_time"]
-#         unique_together = ("doctor", "day_of_week", "start_time", "end_time")
-
-#     def clean(self):
-#         if self.start_time >= self.end_time:
-#             raise ValidationError("Start time must be earlier than end time.")
-
-#         overlapping = Availability.objects.filter(
-#             doctor=self.doctor,
-#             day_of_week=self.day_of_week,
-#             start_time__lt=self.end_time,
-#             end_time__gt=self.start_time,
-#         ).exclude(id=self.id)
-
-#         if overlapping.exists():
-#             raise ValidationError("This time overlaps with another availability.")
-
-#     def __str__(self):
-#         return f"{self.doctor.user.username} - {self.day_of_week} ({self.start_time}-{self.end_time})"
- 
-
-# class Diagnosis(models.Model): 
-#     appointment = models.OneToOneField(Appointment, on_delete=models.CASCADE)
-#     diagnosis = models.TextField()
-#     notes = models.TextField(blank=True)
-#     created_at = models.DateTimeField(auto_now_add=True)
-
-#     def __str__(self):
-#         return f"Diagnosis for {self.appointment}"  
-    
-  
-# class Prescription(models.Model): 
-#     diagnosis = models.ForeignKey(Diagnosis, on_delete=models.CASCADE, related_name="prescriptions")
-#     medicine_name = models.CharField(max_length=100)
-#     dosage = models.CharField(max_length=50)
-#     duration = models.CharField(max_length=50)
-
-#     def __str__(self):
-#         return self.medicine_name     
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# from django.db import models
-# from django.conf import settings
-# from django.core.exceptions import ValidationError
-
-
-# class DoctorProfile(models.Model):
-#     user = models.OneToOneField(
-#         settings.AUTH_USER_MODEL,
-#         on_delete=models.CASCADE,
-#         related_name="doctor_profile"
-#     )
-#     specialization = models.CharField(max_length=100)
-#     location = models.CharField(max_length=100)
-#     years_of_experience = models.PositiveIntegerField(default=0)
-
-#     def __str__(self):
-#         return f"Doctor: {self.user.username} ({self.specialization})"
-
-
-# class Availability(models.Model):
-#     DAYS = (
-#         ("Monday", "Monday"),
-#         ("Tuesday", "Tuesday"),
-#         ("Wednesday", "Wednesday"),
-#         ("Thursday", "Thursday"),
-#         ("Friday", "Friday"),
-#         ("Saturday", "Saturday"),
-#         ("Sunday", "Sunday"),
-#     )
-
-#     doctor = models.ForeignKey(
-#         "doctors.DoctorProfile",   # ✅ FIXED HERE
-#         on_delete=models.CASCADE,
-#         related_name="availabilities"
-#     )
-#     day_of_week = models.CharField(max_length=10, choices=DAYS)
-#     start_time = models.TimeField()
-#     end_time = models.TimeField()
-
-#     class Meta:
-#         ordering = ["day_of_week", "start_time"]
-#         unique_together = ("doctor", "day_of_week", "start_time", "end_time")
-
-#     def clean(self):
-#         if self.start_time >= self.end_time:
-#             raise ValidationError("Start time must be earlier than end time.")
-
-#         overlapping = Availability.objects.filter(
-#             doctor=self.doctor,
-#             day_of_week=self.day_of_week,
-#             start_time__lt=self.end_time,
-#             end_time__gt=self.start_time,
-#         ).exclude(id=self.id)
-
-#         if overlapping.exists():
-#             raise ValidationError("This time overlaps with another availability.")
-
-#     def __str__(self):
-#         return (
-#             f"{self.doctor.user.username} - "
-#             f"{self.day_of_week}: {self.start_time}-{self.end_time}"
-#         )
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# from django.db import models
-# from django.conf import settings
-# from django.core.exceptions import ValidationError
-
-
-# class DoctorProfile(models.Model):
-#     user = models.OneToOneField(
-#         settings.AUTH_USER_MODEL,
-#         on_delete=models.CASCADE,
-#         related_name="doctor_profile"
-#     )
-#     specialization = models.CharField(max_length=100)
-#     location = models.CharField(max_length=100)
-#     years_of_experience = models.PositiveIntegerField(default=0)
-
-#     def __str__(self):
-#         return f"Doctor: {self.user.username} ({self.specialization})"
-
-
-# class Availability(models.Model):
-#     DAYS = (
-#         ("Monday", "Monday"),
-#         ("Tuesday", "Tuesday"),
-#         ("Wednesday", "Wednesday"),
-#         ("Thursday", "Thursday"),
-#         ("Friday", "Friday"),
-#         ("Saturday", "Saturday"),
-#         ("Sunday", "Sunday"),
-#     )
-
-#     doctor = models.ForeignKey(
-#         Doctor,
-#         on_delete=models.CASCADE,
-#         related_name="availabilities"
-#     )
-#     day_of_week = models.CharField(max_length=10, choices=DAYS)
-#     start_time = models.TimeField()
-#     end_time = models.TimeField()
-
-#     class Meta:
-#         ordering = ["day_of_week", "start_time"]
-#         unique_together = ("doctor", "day_of_week", "start_time", "end_time")
-
-#     def clean(self):
-#         # Basic validation
-#         if self.start_time >= self.end_time:
-#             raise ValidationError("Start time must be earlier than end time.")
-
-#         # Overlapping validation
-#         overlapping = Availability.objects.filter(
-#             doctor=self.doctor,
-#             day_of_week=self.day_of_week,
-#             start_time__lt=self.end_time,
-#             end_time__gt=self.start_time,
-#         ).exclude(id=self.id)
-
-#         if overlapping.exists():
-#             raise ValidationError(
-#                 "This time overlaps with another availability."
-#             )
-
-#     def __str__(self):
-#         return f"{self.doctor.user.username} - {self.day_of_week}: {self.start_time}-{self.end_time}"

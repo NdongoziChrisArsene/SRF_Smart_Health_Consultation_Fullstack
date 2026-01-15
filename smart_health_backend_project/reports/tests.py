@@ -12,10 +12,10 @@ class ReportAPITest(TestCase):
     def setUp(self):
         self.client = APIClient()
 
-        self.admin = User.objects.create_user(
+        self.admin = User.objects.create_superuser(
+            username="admin",
             email="admin@test.com",
             password="admin123",
-            is_staff=True,
         )
 
         self.client.force_authenticate(self.admin)

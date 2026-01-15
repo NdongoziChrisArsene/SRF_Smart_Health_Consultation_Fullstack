@@ -1,93 +1,112 @@
-from django.utils import timezone
-from datetime import timedelta
-
-from django.contrib.auth import authenticate, get_user_model
-from rest_framework import generics, status
-from rest_framework.permissions import AllowAny, IsAdminUser
-from rest_framework.response import Response
+from rest_framework import status
 from rest_framework.views import APIView
-from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework.response import Response
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from django.core.mail import send_mail
+from django.conf import settings
+from rest_framework_simplejwt.tokens import RefreshToken, AccessToken
+from .serializers import (
+    RegisterSerializer,
+    LoginSerializer,
+    PasswordResetRequestSerializer,
+    PasswordResetConfirmSerializer,
+    UserSerializer,
+)
+from .models import User
 
-from .serializers import RegisterSerializer, LoginSerializer
-
-User = get_user_model()
-
-
-class RegisterView(generics.CreateAPIView):
-    queryset = User.objects.all()
-    serializer_class = RegisterSerializer
+# Registration
+class RegisterView(APIView):
     permission_classes = [AllowAny]
-    http_method_names = ["post"]
-
-
-class LoginView(generics.GenericAPIView):
-    serializer_class = LoginSerializer
-    permission_classes = [AllowAny]
-    http_method_names = ["post"]
 
     def post(self, request):
-        serializer = self.get_serializer(data=request.data)
+        serializer = RegisterSerializer(data=request.data)
+        if serializer.is_valid():
+            user = serializer.save()
+            refresh = RefreshToken.for_user(user)
+            return Response({
+                "user": UserSerializer(user).data,
+                "access": str(refresh.access_token),
+                "refresh": str(refresh),
+                "role": user.role,
+            }, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+# Login
+class LoginView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = LoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-
-        user = authenticate(
-            request=request,
-            username=serializer.validated_data["username"],
-            password=serializer.validated_data["password"],
-        )
-
-        if not user:
-            return Response(
-                {"detail": "Invalid username or password"},
-                status=status.HTTP_401_UNAUTHORIZED,
-            )
-
-        if not user.is_active:
-            return Response(
-                {"detail": "User account is disabled"},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-
+        user = serializer.validated_data["user"]
         refresh = RefreshToken.for_user(user)
+        return Response({
+            "access": str(refresh.access_token),
+            "refresh": str(refresh),
+            "role": user.role,
+        }, status=status.HTTP_200_OK)
+
+# Password Reset Request
+class PasswordResetView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = PasswordResetRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        email = serializer.validated_data["email"]
+
+        try:
+            user = User.objects.get(email=email)
+            reset_token = RefreshToken.for_user(user).access_token
+            reset_link = f"http://localhost:3000/reset-password/{reset_token}"
+
+            send_mail(
+                subject="Password Reset Request",
+                message=f"Click here to reset your password: {reset_link}",
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[email],
+                fail_silently=True,
+            )
+        except User.DoesNotExist:
+            pass  # don't reveal email existence
 
         return Response(
-            {
-                "refresh": str(refresh),
-                "access": str(refresh.access_token),
-                "username": user.username,
-                "role": user.role,
-            },
+            {"message": "If the email exists, a reset link has been sent."},
             status=status.HTTP_200_OK,
         )
 
+# Password Reset Confirm
+class PasswordResetConfirmView(APIView):
+    permission_classes = [AllowAny]
 
+    def post(self, request):
+        serializer = PasswordResetConfirmSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        token = serializer.validated_data["token"]
+        password = serializer.validated_data["password"]
+
+        try:
+            access_token = AccessToken(token)
+            user_id = access_token["user_id"]
+            user = User.objects.get(id=user_id)
+            user.set_password(password)
+            user.save()
+            return Response({"message": "Password reset successful."}, status=status.HTTP_200_OK)
+        except Exception:
+            return Response({"error": "Invalid or expired token."}, status=status.HTTP_400_BAD_REQUEST)
+
+# Admin Stats
 class AdminUserStatsView(APIView):
-    """
-    Admin-only user statistics
-    period=today|yesterday|last_7_days|last_30_days
-    """
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        period = request.query_params.get("period", "last_7_days")
-        today = timezone.now().date()
-
-        ranges = {
-            "today": (today, today),
-            "yesterday": (today - timedelta(days=1), today - timedelta(days=1)),
-            "last_7_days": (today - timedelta(days=6), today),
-            "last_30_days": (today - timedelta(days=29), today),
-        }
-
-        if period not in ranges:
-            return Response({"detail": "Invalid period"}, status=400)
-
-        start, end = ranges[period]
-
+        if request.user.role != "admin":
+            return Response({"error": "Admin access required"}, status=status.HTTP_403_FORBIDDEN)
         return Response({
-            "new_users": User.objects.filter(date_joined__date__range=(start, end)).count(),
-            "active_users": User.objects.filter(last_login__date__range=(start, end)).count(),
-            "start_date": start,
-            "end_date": end,
+            "total_users": User.objects.count(),
+            "patients": User.objects.filter(role="patient").count(),
+            "doctors": User.objects.filter(role="doctor").count(),
+            "admins": User.objects.filter(role="admin").count(),
         })
 
 
@@ -136,98 +155,169 @@ class AdminUserStatsView(APIView):
 
 
 
-# from django.utils import timezone 
-# from rest_framework import generics, status
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# from rest_framework import status
+# from rest_framework.views import APIView
 # from rest_framework.response import Response
-# from rest_framework.permissions import AllowAny, IsAdminUser
-# from django.contrib.auth import authenticate
-# from rest_framework_simplejwt.tokens import RefreshToken 
-# from rest_framework.views import APIView 
-# from datetime import timedelta  
-# from django.contrib.auth import get_user_model
+# from rest_framework.permissions import AllowAny, IsAuthenticated
+# from django.core.mail import send_mail
+# from django.conf import settings
+# from rest_framework_simplejwt.tokens import RefreshToken, AccessToken
 
+# from .serializers import (
+#     RegisterSerializer,
+#     LoginSerializer,
+#     PasswordResetRequestSerializer,
+#     PasswordResetConfirmSerializer,
+#     UserSerializer,
+# )
 # from .models import User
-# from .serializers import RegisterSerializer, LoginSerializer
-
-# User = get_user_model()
 
 
-# class RegisterView(generics.CreateAPIView):
-#     queryset = User.objects.all()
-#     serializer_class = RegisterSerializer
+# class RegisterView(APIView):
 #     permission_classes = [AllowAny]
-#     http_method_names = ["post"]
-
-
-# class LoginView(generics.GenericAPIView):
-#     serializer_class = LoginSerializer
-#     permission_classes = [AllowAny]
-#     http_method_names = ["post"]
 
 #     def post(self, request):
-#         serializer = self.get_serializer(data=request.data)
+#         serializer = RegisterSerializer(data=request.data)
+#         if serializer.is_valid():
+#             user = serializer.save()
+#             refresh = RefreshToken.for_user(user)
+
+#             return Response({
+#                 "user": UserSerializer(user).data,
+#                 "access": str(refresh.access_token),
+#                 "refresh": str(refresh),
+#                 "role": user.role,
+#             }, status=status.HTTP_201_CREATED)
+
+#         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+# class LoginView(APIView):
+#     permission_classes = [AllowAny]
+
+#     def post(self, request):
+#         serializer = LoginSerializer(data=request.data)
 #         serializer.is_valid(raise_exception=True)
 
-#         user = authenticate(
-#             request=request,
-#             username=serializer.validated_data["username"],
-#             password=serializer.validated_data["password"],
-#         )
-
-
-#         if not user:
-#             return Response(
-#                 {"detail": "Invalid username or password"},
-#                 status=status.HTTP_401_UNAUTHORIZED,
-#             )
-
-#         if not user.is_active:
-#             return Response(
-#                 {"detail": "User account is disabled"},
-#                 status=status.HTTP_403_FORBIDDEN,
-#             )
-
+#         user = serializer.validated_data["user"]
 #         refresh = RefreshToken.for_user(user)
 
+#         return Response({
+#             "access": str(refresh.access_token),
+#             "refresh": str(refresh),
+#             "role": user.role,
+#         }, status=status.HTTP_200_OK)
+
+
+# class PasswordResetView(APIView):
+#     permission_classes = [AllowAny]
+
+#     def post(self, request):
+#         serializer = PasswordResetRequestSerializer(data=request.data)
+#         serializer.is_valid(raise_exception=True)
+
+#         email = serializer.validated_data["email"]
+
+#         try:
+#             user = User.objects.get(email=email)
+
+#             reset_token = RefreshToken.for_user(user).access_token
+#             reset_link = f"http://localhost:3000/reset-password/{reset_token}"
+
+#             send_mail(
+#                 subject="Password Reset Request",
+#                 message=f"Click here to reset your password: {reset_link}",
+#                 from_email=settings.DEFAULT_FROM_EMAIL,
+#                 recipient_list=[email],
+#                 fail_silently=True,
+#             )
+#         except User.DoesNotExist:
+#             pass  # security: don't reveal email existence
+
 #         return Response(
-#             {
-#                 "refresh": str(refresh),
-#                 "access": str(refresh.access_token),
-#                 "username": user.username,
-#                 "role": user.role,
-#             },
+#             {"message": "If the email exists, a reset link has been sent."},
 #             status=status.HTTP_200_OK,
 #         )
 
+
+# class PasswordResetConfirmView(APIView):
+#     permission_classes = [AllowAny]
+
+#     def post(self, request):
+#         serializer = PasswordResetConfirmSerializer(data=request.data)
+#         serializer.is_valid(raise_exception=True)
+
+#         token = serializer.validated_data["token"]
+#         password = serializer.validated_data["password"]
+
+#         try:
+#             access_token = AccessToken(token)
+#             user_id = access_token["user_id"]
+#             user = User.objects.get(id=user_id)
+
+#             user.set_password(password)
+#             user.save()
+
+#             return Response(
+#                 {"message": "Password reset successful."},
+#                 status=status.HTTP_200_OK,
+#             )
+
+#         except Exception:
+#             return Response(
+#                 {"error": "Invalid or expired token."},
+#                 status=status.HTTP_400_BAD_REQUEST,
+#             )
+
+
 # class AdminUserStatsView(APIView):
-#     """
-#     Returns counts of new and active users over a specified period.
-#     Query param: period=today|yesterday|last_7_days|last_30_days
-#     """
-#     permission_classes = [IsAdminUser]
+#     permission_classes = [IsAuthenticated]
 
 #     def get(self, request):
-#         period = request.query_params.get("period", "last_7_days")
-#         today = timezone.now().date()
-        
-#         if period == "today":
-#             start, end = today, today
-#         elif period == "yesterday":
-#             start, end = today - timedelta(days=1), today - timedelta(days=1)
-#         elif period == "last_7_days":
-#             start, end = today - timedelta(days=6), today
-#         elif period == "last_30_days":
-#             start, end = today - timedelta(days=29), today
-#         else:
-#             return Response({"detail": "Invalid period"}, status=400) 
-        
-        
-#         new_users = User.objects.filter(date_joined__date__range=[start, end]).count()
-#         active_users = User.objects.filter(last_login__date__range=[start, end]).count()
+#         if request.user.role != "admin":
+#             return Response(
+#                 {"error": "Admin access required"},
+#                 status=status.HTTP_403_FORBIDDEN,
+#             )
 
 #         return Response({
-#             "new_users": new_users,
-#             "active_users": active_users,
-#             "start_date": str(start),
-#             "end_date": str(end),
-#         })  
+#             "total_users": User.objects.count(),
+#             "patients": User.objects.filter(role="patient").count(),
+#             "doctors": User.objects.filter(role="doctor").count(),
+#             "admins": User.objects.filter(role="admin").count(),
+#         })
+
+
+
+
+
+
+
+
+

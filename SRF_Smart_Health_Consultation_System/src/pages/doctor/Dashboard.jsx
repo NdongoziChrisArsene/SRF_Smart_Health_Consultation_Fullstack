@@ -7,7 +7,7 @@ export default function DoctorDashboard() {
   const Card = ({ title, description, path }) => (
     <div
       onClick={() => navigate(path)}
-      className="p-5 bg-white rounded shadow cursor-pointer hover:shadow-lg transition"
+      className="p-5 bg-brand-yellow rounded shadow cursor-pointer hover:shadow-lg transition"
     >
       <h2 className="font-semibold text-lg mb-1">{title}</h2>
       <p className="text-sm text-gray-600">{description}</p>

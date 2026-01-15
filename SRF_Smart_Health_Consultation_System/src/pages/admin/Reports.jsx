@@ -16,7 +16,7 @@ export default function Reports() {
     <div className="p-6">
       <h1 className="text-xl font-bold mb-4">System Reports</h1>
 
-      <div className="bg-white p-4 shadow rounded space-y-2">
+      <div className="bg-brand-yellow p-4 shadow rounded space-y-2">
         <p><strong>Total Patients:</strong> {reports.total_patients}</p>
         <p><strong>Total Doctors:</strong> {reports.total_doctors}</p>
         <p><strong>Total Appointments:</strong> {reports.total_appointments}</p>

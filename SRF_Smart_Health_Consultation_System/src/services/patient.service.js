@@ -1,52 +1,29 @@
-// src/services/patient.service.js
+import API from "./api";
 
-import api from "./api";
-
-/* =====================================================
-   PATIENT SERVICE
-   → All patient-related API calls
-===================================================== */
-
-/**
- * Get patient medical history
- * Used in:
- * - MedicalHistory.jsx
- * - SymptomChecker.jsx
- */
-export const getMedicalHistory = async () => {
-  try {
-    const response = await api.get("/patient/medical-history/");
-    return response.data;
-  } catch (error) {
-    console.error("Failed to fetch medical history:", error);
-    throw error;
-  }
+export const getPatientProfile = () => {
+  return API.get("/patients/profile/");
 };
 
-/**
- * Book a new appointment
- * Used in:
- * - BookAppointment.jsx
- */
-export const bookAppointment = async (appointmentData) => {
-  try {
-    const response = await api.post("/appointments/book/", appointmentData);
-    return response.data;
-  } catch (error) {
-    console.error("Failed to book appointment:", error);
-    throw error;
-  }
+export const updatePatientProfile = (data) => {
+  return API.patch("/patients/profile/", data);
 };
 
-/**
- * Get patient appointments
- */
-export const getPatientAppointments = async () => {
-  try {
-    const response = await api.get("/patient/appointments/");
-    return response.data;
-  } catch (error) {
-    console.error("Failed to fetch appointments:", error);
-    throw error;
-  }
+export const getMedicalHistory = () => {
+  return API.get("/reports/");
+};
+
+export const bookAppointment = (data) => {
+  return API.post("/appointments/patient/create/", data);
+};
+
+export const getAppointments = () => {
+  return API.get("/appointments/patient/list/");
+};
+
+export const getRecommendedDoctors = () => {
+  return API.get("/doctors/recommendations/");
+};
+
+export const getAllDoctors = () => {
+  return API.get("/doctors/");
 };
